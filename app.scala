@@ -51,8 +51,8 @@ object Main extends App {
   }
 
   def run(): Future[Done] = {
-    val start = System.currentTimeMillis();
-    val concurrency = 4
+    val start = System.currentTimeMillis()
+    val concurrency = 2
     Source(
       (1 to 4).toStream.map(i => {
         println(s"1: Emitting $i")
