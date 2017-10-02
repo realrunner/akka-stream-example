@@ -9,26 +9,22 @@ import akka.util.Timeout
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future}
 
-case class In(n: String)
+case class In(n: String, delay: Int)
 case class Out(x: String)
 
 object OneToNActor {
-  def makeSlowStream(id: String): Stream[Out] = {
+  def makeSlowStream(id: String, delay: Int): Stream[Out] = {
     (1 to 3).toStream.map(x => {
-      val delay = 100
       Thread.sleep(delay)
       Out(s"$id -> $x")
     })
   }
-
-  def makeSlowStreamFuture(n: String)(implicit ec: ExecutionContext): Future[Stream[Out]] =
-    Future(makeSlowStream(n))
 }
 
 class OneToNActor(implicit ec: ExecutionContext) extends Actor {
-  override def receive = {
-    case In(n) =>
-      sender() ! OneToNActor.makeSlowStream(n)
+  override def receive: PartialFunction[Any, Unit] = {
+    case In(n, delay) =>
+      sender() ! OneToNActor.makeSlowStream(n, delay)
   }
 }
 
@@ -46,29 +42,29 @@ object Main extends App {
     actorSystem.terminate()
   }
 
-  def getNextStream(s: String) = {
-    (actor ? In(s)).mapTo[Stream[Out]]
+  def getNextStream(s: String, delay: Int) = {
+    (actor ? In(s, delay)).mapTo[Stream[Out]]
   }
 
   def run(): Future[Done] = {
     val start = System.currentTimeMillis()
     val concurrency = 2
     Source(
-      (1 to 4).toStream.map(i => {
+      (1 to 5).toStream.map(i => {
         println(s"1: Emitting $i")
         i.toString
       }))
-      .mapAsyncUnordered(concurrency)(getNextStream)
+      .mapAsyncUnordered(concurrency)(s => getNextStream(s, 25))
       .mapConcat(identity)
-      .mapAsyncUnordered(concurrency)(out => getNextStream(out.x))
+      .mapAsyncUnordered(concurrency)(out => getNextStream(out.x, 50))
       .mapConcat(identity)
-      .mapAsyncUnordered(concurrency)(out => getNextStream(out.x))
+      .mapAsyncUnordered(concurrency)(out => getNextStream(out.x, 100))
       .mapConcat(identity)
       .map(x => println(s"4: Received $x after ${System.currentTimeMillis() - start}"))
       .runWith(Sink.ignore)
   }
 
   println("Awaiting")
-  Await.result(run().flatMap(_ => shutdown()), 20.seconds)
+  Await.result(run().flatMap(_ => shutdown()), 60.seconds)
   println("Done")
 }
